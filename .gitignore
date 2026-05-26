@@ -1,0 +1,12 @@
+# 依赖与编译产物
+node_modules/
+dist/
+
+# 日志
+*.log
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

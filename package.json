@@ -1,0 +1,30 @@
+{
+  "name": "AoE4-Overlay",
+  "version": "1.1.0",
+  "description": "AoE4 transparent overlay",
+  "author": "Gold~",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win portable"
+  },
+  "build": {
+    "appId": "com.aoe4.overlay",
+    "productName": "AoE4-Overlay",
+    "files": [
+      "**/*",
+      "!**/*.png"
+    ],
+    "win": {
+      "target": "portable",
+      "icon": "icon.ico"
+    },
+    "portable": {
+      "artifactName": "AoE4Overlay.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^24.0.0"
+  }
+}
