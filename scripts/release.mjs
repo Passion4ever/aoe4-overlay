@@ -1,14 +1,14 @@
-// 在 Gitee 创建 Release 并上传 Tauri 打包好的 NSIS 安装包。
+// 在 Gitee 创建 Release 并上传免安装单 exe。
 // 供 GitHub Actions 调用（云端快网上传），本地也能跑：
-//   npm run tauri build
+//   cd src-tauri && cargo build --release
 //   $env:GITEE_TOKEN="你的令牌"; node scripts/release.mjs
 //
 // 版本号从 src-tauri/tauri.conf.json 读取（tag = v<version>）。
-// 附件取 src-tauri/target/release/bundle/nsis/*-setup.exe。
+// 附件取 src-tauri/target/release/aoe4-overlay.exe，上传名 AoE4Overlay-<version>.exe。
 // 令牌从环境变量 GITEE_TOKEN 读取，不写入仓库。
 // 上传走 Node 原生 https（fetch 对大文件有 5 分钟 header 超时，慢网会失败）。
 
-import { readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import https from "node:https";
@@ -29,18 +29,13 @@ if (!token) {
 const conf = JSON.parse(await readFile(path.join(root, "src-tauri", "tauri.conf.json"), "utf8"));
 const tag = `v${conf.version}`;
 
-// 找 NSIS 安装包
-const nsisDir = path.join(root, "src-tauri", "target", "release", "bundle", "nsis");
-if (!existsSync(nsisDir)) {
-  console.error(`✗ 找不到 ${nsisDir}\n  请先运行：npm run tauri build`);
+// 免安装单 exe
+const exeName = `AoE4Overlay-${conf.version}.exe`; // 上传到 Gitee 的文件名
+const exePath = path.join(root, "src-tauri", "target", "release", "aoe4-overlay.exe");
+if (!existsSync(exePath)) {
+  console.error(`✗ 找不到 ${exePath}\n  请先运行：cd src-tauri && cargo build --release`);
   process.exit(1);
 }
-const exeName = (await readdir(nsisDir)).find((f) => f.toLowerCase().endsWith(".exe"));
-if (!exeName) {
-  console.error(`✗ ${nsisDir} 下没有 .exe`);
-  process.exit(1);
-}
-const exePath = path.join(nsisDir, exeName);
 
 const tokenQS = `access_token=${encodeURIComponent(token)}`;
 console.log(`→ 发布 ${tag}（${exeName}）到 ${OWNER}/${REPO}`);
