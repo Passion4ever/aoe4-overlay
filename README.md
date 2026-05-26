@@ -11,9 +11,11 @@
 
 ## 使用
 
-1. 从 [Releases](https://gitee.com/Passion4ever/aoe4-overlay/releases) 下载并运行。
+1. 从 [Releases](https://gitee.com/Passion4ever/aoe4-overlay/releases) 下载 `AoE4Overlay-x.x.x.exe`，**免安装，双击即用**。
 2. 托盘图标 → 设置 → 填入你的 **Profile ID / Steam ID**（也可直接粘贴 aoe4world 或 Steam 主页链接）→ 应用。
 3. 默认快捷键 **Ctrl+`** 切换显示 / 隐藏。
+
+> 绝大多数 Win10 / Win11 都能直接打开。万一双击没反应，装一下微软官方的 [WebView2 运行时](https://developer.microsoft.com/microsoft-edge/webview2/)（很小，选「Evergreen 引导程序」一键装完即可，之后无需再装）。
 
 ## 开发
 
