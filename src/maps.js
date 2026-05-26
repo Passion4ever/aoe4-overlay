@@ -91,6 +91,12 @@ const MAP_NAMES = {
   "Rolling Rivers": "奔流",
   "Wadden Sea": "瓦登海",
 
+  // ── 新图（英文名取自 aoe4world /api/v0/maps；seicing 暂未收录，中文待校对）──
+  "Pigeon's Valley": "鸽子谷",
+  "Pigeon's View": "鸽子瞭望",
+  "Pigeon Woods": "鸽子林",
+  "Sixfold Crossing": "六叉路口",
+
   // ── 锦标赛/自定义地图 ──
   "Anatolian Hills": "安纳托利亚丘陵",
   "Alopecia": "秃地",

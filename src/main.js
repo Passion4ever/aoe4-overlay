@@ -7,9 +7,11 @@ const {
   nativeImage,
   globalShortcut,
   screen,
+  shell,
 } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const https = require("https");
 const MAP_NAMES = require("./maps");
 const CIV_NAMES = require("./civs");
 
@@ -29,9 +31,18 @@ const OVERLAY_H = 500;
 const APP_NAME = "AoE4-Overlay";
 const DEFAULTS = { opacity: 75, zoom: 75, position: "top-center", hotkey: "" };
 
+// Update check (Gitee Releases — reachable in mainland China, unlike GitHub)
+const UPDATE_API =
+  "https://gitee.com/api/v5/repos/Passion4ever/aoe4-overlay/releases/latest";
+const RELEASES_PAGE = "https://gitee.com/Passion4ever/aoe4-overlay/releases";
+const SETUP_W = 400;
+const SETUP_H = 522; // base content height
+const SETUP_H_UPDATE = 573; // taller when the update banner is shown
+
 let tray = null;
 let overlayWin = null;
 let overlayVisible = true;
+let updateInfo = null; // { version, url } when a newer release exists
 
 function loadConfig() {
   try {
@@ -51,7 +62,7 @@ function getContentAlign(pos) {
   return "center";
 }
 
-const ICON_PATH = path.join(__dirname, "icon.ico");
+const ICON_PATH = path.join(__dirname, "..", "assets", "icon.ico");
 
 function createTrayIcon() {
   return nativeImage.createFromPath(ICON_PATH);
@@ -72,9 +83,22 @@ function registerHotkey(cfg) {
   }
 }
 
+function openSettings() {
+  // Focus an already-open settings window instead of stacking a new one.
+  const win = BrowserWindow.getAllWindows().find((w) => w !== overlayWin);
+  if (win) {
+    win.show();
+    win.focus();
+  } else {
+    createSetupWindow();
+  }
+}
+
 function createTray() {
   tray = new Tray(createTrayIcon());
   tray.setToolTip(`${APP_NAME} v${app.getVersion()} · by Gold~`);
+  // Single-click (and the first click of a double-click) opens settings.
+  tray.on("click", openSettings);
   updateTrayMenu();
 }
 
@@ -82,22 +106,29 @@ function updateTrayMenu() {
   const cfg = loadConfig();
   const visible = overlayWin && overlayVisible;
   const hk = cfg.hotkey ? `  [${cfg.hotkey}]` : "";
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      {
-        label: (visible ? "隐藏" : "显示") + hk,
-        click: () => {
-          if (!overlayWin) return;
-          overlayVisible = !overlayVisible;
-          overlayWin.setOpacity(overlayVisible ? 1 : 0);
-          updateTrayMenu();
-        },
-        enabled: !!overlayWin,
+  const items = [];
+  if (updateInfo) {
+    items.push({
+      label: `↑ 新版 v${updateInfo.version} — 点击下载`,
+      click: () => shell.openExternal(updateInfo.url),
+    });
+    items.push({ type: "separator" });
+  }
+  items.push(
+    {
+      label: (visible ? "隐藏" : "显示") + hk,
+      click: () => {
+        if (!overlayWin) return;
+        overlayVisible = !overlayVisible;
+        overlayWin.setOpacity(overlayVisible ? 1 : 0);
+        updateTrayMenu();
       },
-      { label: "设置", click: () => createSetupWindow() },
-      { label: "退出", click: () => app.quit() },
-    ])
+      enabled: !!overlayWin,
+    },
+    { label: "设置", click: () => openSettings() },
+    { label: "退出", click: () => app.quit() }
   );
+  tray.setContextMenu(Menu.buildFromTemplate(items));
 }
 
 function createSetupWindow() {
@@ -105,8 +136,8 @@ function createSetupWindow() {
     if (w !== overlayWin) w.close();
   });
   const win = new BrowserWindow({
-    width: 400,
-    height: 530,
+    width: SETUP_W,
+    height: updateInfo ? SETUP_H_UPDATE : SETUP_H,
     useContentSize: true,
     resizable: false,
     autoHideMenuBar: true,
@@ -114,11 +145,16 @@ function createSetupWindow() {
     icon: ICON_PATH,
     webPreferences: { preload: path.join(__dirname, "preload.js") },
   });
-  win.loadFile("setup.html");
+  win.loadFile(path.join(__dirname, "setup.html"));
   win.webContents.on("did-finish-load", () => {
     win.webContents.executeJavaScript(
       `window._loadConfig(${JSON.stringify(loadConfig())});` +
-        `window._setVersion(${JSON.stringify(app.getVersion())})`
+        `window._setVersion(${JSON.stringify(app.getVersion())});` +
+        (updateInfo
+          ? `window._showUpdate(${JSON.stringify(updateInfo.version)},${JSON.stringify(
+              updateInfo.url
+            )})`
+          : "")
     );
   });
   return win;
@@ -175,7 +211,13 @@ function createOverlayWindow(cfg) {
         document.querySelectorAll('p.text-sm.font-bold:not(.uppercase)').forEach(el => {
           const text = el.textContent.trim();
           const en = text.includes(' / ') ? text.split(' / ')[0] : text;
-          const cn = MAP_CN[en];
+          // Tournament maps come prefixed (e.g. "EGC - Dry Arabia"): keep the
+          // English untouched for display, but strip the prefix (and a trailing
+          // " (old)") to look up the base map's Chinese name.
+          const key = en
+            .replace(/^[A-Za-z]+(:[A-Za-z]+)? - /, '')
+            .replace(/\\s*\\(old\\)\\s*$/i, '');
+          const cn = MAP_CN[en] || MAP_CN[key];
           if (cn) {
             const expected = en + ' / ' + cn;
             if (text !== expected) {
@@ -263,17 +305,77 @@ function createOverlayWindow(cfg) {
   return overlayWin;
 }
 
+// ── Update check (Gitee) ──
+// Compare dotted version segments numerically; "v1.2.0" vs "1.1.0" etc.
+function parseVer(s) {
+  return String(s)
+    .replace(/^v/i, "")
+    .split(".")
+    .map((n) => parseInt(n, 10) || 0);
+}
+function isNewer(remote, local) {
+  const a = parseVer(remote);
+  const b = parseVer(local);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] || 0;
+    const y = b[i] || 0;
+    if (x > y) return true;
+    if (x < y) return false;
+  }
+  return false;
+}
+
+// Fail-silent: any network/parse error just means "no update shown".
+function checkForUpdate() {
+  const req = https.get(
+    UPDATE_API,
+    { headers: { "User-Agent": "AoE4Overlay" }, timeout: 8000 },
+    (res) => {
+      if (res.statusCode !== 200) {
+        res.resume();
+        return;
+      }
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => {
+        try {
+          const tag = JSON.parse(data).tag_name;
+          if (!tag || !isNewer(tag, app.getVersion())) return;
+          updateInfo = {
+            version: String(tag).replace(/^v/i, ""),
+            url: RELEASES_PAGE,
+          };
+          updateTrayMenu();
+          // If a settings window is already open, surface the banner now.
+          BrowserWindow.getAllWindows().forEach((w) => {
+            if (w === overlayWin) return;
+            w.setContentSize(SETUP_W, SETUP_H_UPDATE);
+            w.webContents.executeJavaScript(
+              `window._showUpdate && window._showUpdate(${JSON.stringify(
+                updateInfo.version
+              )},${JSON.stringify(updateInfo.url)})`
+            );
+          });
+        } catch (e) {}
+      });
+    }
+  );
+  req.on("error", () => {});
+  req.on("timeout", () => req.destroy());
+}
+
 // Only the primary instance initializes. A second launch fails the lock
 // above (app.quit) and must NOT register whenReady, otherwise it briefly
 // builds a duplicate tray icon before quitting. The running instance gets
 // the "second-instance" event instead and surfaces its settings window.
 if (gotLock) {
-  app.on("second-instance", () => createSetupWindow());
+  app.on("second-instance", () => openSettings());
 
   app.whenReady().then(() => {
     createTray();
     const cfg = loadConfig();
     cfg.profile_id ? createOverlayWindow(cfg) : createSetupWindow();
+    checkForUpdate();
   });
 }
 
@@ -284,6 +386,8 @@ ipcMain.handle("launch-overlay", (_, cfg) => {
 });
 
 ipcMain.handle("get-config", () => loadConfig());
+
+ipcMain.handle("open-external", (_, url) => shell.openExternal(url));
 
 app.on("window-all-closed", () => {});
 app.on("will-quit", () => globalShortcut.unregisterAll());

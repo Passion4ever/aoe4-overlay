@@ -18,10 +18,23 @@
       radial-gradient(130% 75% at 50% -12%, rgba(212,165,74,.11), transparent 60%),
       linear-gradient(180deg,var(--bg2),var(--bg));
     display:flex; flex-direction:column;
-    padding:22px 24px 16px;
+    padding:22px 24px 14px;
     -webkit-user-select:none; user-select:none;
     overflow:hidden;
   }
+
+  /* ── update banner ── */
+  .upd{
+    display:none; align-items:center; gap:6px;
+    margin-bottom:14px; padding:9px 12px;
+    background:linear-gradient(180deg, rgba(212,165,74,.16), rgba(212,165,74,.09));
+    border:1px solid rgba(212,165,74,.40); border-radius:8px;
+    font-size:12px; color:var(--gold-h); cursor:pointer; transition:.15s;
+  }
+  .upd.show{display:flex;}
+  .upd:hover{background:rgba(212,165,74,.22); border-color:var(--gold);}
+  .upd b{font-weight:700; color:var(--gold-h);}
+  .upd .arrow{margin-left:auto; font-size:13px; opacity:.85;}
 
   /* ── header ── */
   .hdr{display:flex; align-items:center; gap:12px;}
@@ -87,16 +100,20 @@
 
   /* ── footer ── */
   .ftr{
-    margin-top:18px;
+    margin-top:16px;
     display:flex; justify-content:space-between; align-items:center;
-    font-size:10.5px; color:var(--muted2);
+    font-size:12px; color:var(--muted);
   }
+  .ftr #verF{color:#a6a6b0; font-weight:500; font-variant-numeric:tabular-nums;}
   .ftr b{color:var(--gold); font-weight:600;}
 </style>
 </head>
 <body>
+  <div class="upd" id="upd" onclick="openUpd()">
+    发现新版 <b id="updV"></b> · 点此下载 <span class="arrow">↗</span>
+  </div>
   <div class="hdr">
-    <img src="icon.ico" alt="">
+    <img src="../assets/icon.ico" alt="">
     <div class="t">
       <div class="name"><b>AoE4</b> Overlay</div>
       <div class="sub">对局信息悬浮横幅</div>
@@ -170,6 +187,14 @@
   window._setVersion = function(v){
     document.getElementById('verF').textContent = 'v'+v;
   };
+
+  let _updUrl = '';
+  window._showUpdate = function(v, url){
+    _updUrl = url;
+    document.getElementById('updV').textContent = 'v'+v;
+    document.getElementById('upd').classList.add('show');
+  };
+  function openUpd(){ if(_updUrl) window.electronAPI.openExternal(_updUrl); }
 
   function pos(p){
     _pos = p;

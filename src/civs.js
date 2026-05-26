@@ -12,6 +12,7 @@ const CIV_NAMES = {
   "house_of_lancaster": "兰开",
   "japanese": "日本",
   "jeanne_darc": "贞德",
+  "jin_dynasty": "金朝",
   "knights_templar": "圣殿",
   "macedonian_dynasty": "马其顿",
   "malians": "马里",

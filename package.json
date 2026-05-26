@@ -1,12 +1,18 @@
 {
   "name": "AoE4-Overlay",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "AoE4 transparent overlay",
   "author": "Gold~",
-  "main": "main.js",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://gitee.com/Passion4ever/aoe4-overlay.git"
+  },
+  "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --win portable"
+    "build": "electron-builder --win portable",
+    "release": "node scripts/release.mjs"
   },
   "build": {
     "appId": "com.aoe4.overlay",
@@ -17,10 +23,10 @@
     ],
     "win": {
       "target": "portable",
-      "icon": "icon.ico"
+      "icon": "assets/icon.ico"
     },
     "portable": {
-      "artifactName": "AoE4Overlay.exe"
+      "artifactName": "AoE4Overlay-${version}.exe"
     }
   },
   "devDependencies": {
