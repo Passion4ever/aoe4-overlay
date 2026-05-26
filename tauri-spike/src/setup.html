@@ -18,7 +18,7 @@
       radial-gradient(130% 75% at 50% -12%, rgba(212,165,74,.11), transparent 60%),
       linear-gradient(180deg,var(--bg2),var(--bg));
     display:flex; flex-direction:column;
-    padding:22px 24px 14px;
+    padding:22px 24px 8px;
     -webkit-user-select:none; user-select:none;
     overflow:hidden;
   }
@@ -100,7 +100,7 @@
 
   /* ── footer ── */
   .ftr{
-    margin-top:16px;
+    margin-top:14px;
     display:flex; justify-content:space-between; align-items:center;
     font-size:12px; color:var(--muted);
   }
@@ -122,9 +122,9 @@
   <div class="rule"></div>
 
   <div class="f">
-    <label>Profile ID</label>
-    <input class="inp" type="text" id="pid" placeholder="输入 ID 或 aoe4world 主页链接">
-    <div class="hint">aoe4world.com/players/<b>这串数字</b></div>
+    <label>玩家 ID</label>
+    <input class="inp" type="text" id="pid" placeholder="粘贴 aoe4world / Steam 链接，或直接填 ID">
+    <div class="hint">支持 <b>aoe4world ID</b> · <b>Steam ID(17位)</b> · 主页链接，自动识别</div>
   </div>
 
   <div class="f">
@@ -137,18 +137,18 @@
   </div>
 
   <div class="f">
-    <label>透明度</label>
+    <label>不透明度</label>
     <div class="srow">
-      <input type="range" id="opacity" min="20" max="100" value="75"
+      <input type="range" id="opacity" min="40" max="100" value="60"
         oninput="document.getElementById('opV').textContent=this.value+'%'">
-      <span class="val" id="opV">75%</span>
+      <span class="val" id="opV">60%</span>
     </div>
   </div>
 
   <div class="f">
-    <label>缩放大小</label>
+    <label>整体缩放</label>
     <div class="srow">
-      <input type="range" id="zoom" min="40" max="100" value="75"
+      <input type="range" id="zoom" min="50" max="150" step="5" value="75"
         oninput="document.getElementById('zmV').textContent=this.value+'%'">
       <span class="val" id="zmV">75%</span>
     </div>
@@ -158,6 +158,7 @@
     <label>显示 / 隐藏 快捷键</label>
     <select class="inp" id="hk">
       <option value="">无</option>
+      <option value="Alt+O">Alt+O</option>
       <option value="Ctrl+Shift+O">Ctrl+Shift+O</option>
       <option value="Ctrl+Shift+F12">Ctrl+Shift+F12</option>
       <option value="Ctrl+Alt+O">Ctrl+Alt+O</option>
@@ -179,6 +180,9 @@
   let _pos = 'top-center';
   let _updUrl = '';
 
+  // 禁用 app 内的右键菜单（网页默认的刷新/检查等不该出现在桌面应用里）
+  window.addEventListener('contextmenu', e => e.preventDefault());
+
   function pos(p){
     _pos = p;
     document.querySelectorAll('.seg div').forEach(d=>d.classList.remove('on'));
@@ -186,10 +190,20 @@
     (document.getElementById(map[p])||document.getElementById('p-tc')).classList.add('on');
   }
 
+  // 让窗口贴合内容：目标 CSS 宽=400(Electron 设计)，高=内容实际高度。
+  // 注意：body 设了 height:100% 会被撑到视口高，所以不能用 scrollHeight；
+  // 量页脚实际底边 + body 下内边距(8) 才是真正的内容高。
+  function fitSelf(){
+    const ftr = document.querySelector('.ftr');
+    const h = Math.ceil(ftr.getBoundingClientRect().bottom + 8);
+    invoke('fit_settings', { width: 400, height: h, vw: window.innerWidth, vh: window.innerHeight });
+  }
+
   function showUpdate(v, url){
     _updUrl = url;
     document.getElementById('updV').textContent = 'v'+v;
     document.getElementById('upd').classList.add('show');
+    requestAnimationFrame(fitSelf); // 更新条出现后高度变了，重新贴合
   }
   function openUpd(){ if(_updUrl) invoke('open_external', { url: _updUrl }); }
 
@@ -224,6 +238,9 @@
       if(info.version) document.getElementById('verF').textContent = 'v'+info.version;
       if(info.update) showUpdate(info.update.version, info.update.url);
     } catch(e){}
+    // 内容就绪后贴合窗口（多调一次兜底）
+    requestAnimationFrame(fitSelf);
+    setTimeout(fitSelf, 200);
   })();
 
   // 启动后才查到新版时，实时收到通知

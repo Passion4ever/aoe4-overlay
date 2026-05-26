@@ -1,6 +1,6 @@
 [package]
 name = "aoe4-overlay"
-version = "1.2.0"
+version = "1.3.0"
 description = "AoE4 对局信息悬浮横幅"
 authors = ["Gold~"]
 edition = "2021"

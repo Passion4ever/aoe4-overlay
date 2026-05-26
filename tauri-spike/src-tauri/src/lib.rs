@@ -6,21 +6,15 @@ use std::sync::Mutex;
 use tauri::{
     menu::{MenuBuilder, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, LogicalSize, Manager, Wry, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Wry, WebviewUrl,
+    WebviewWindowBuilder,
 };
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_opener::OpenerExt;
 
-const OVERLAY_URL_TMPL: &str =
-    "https://overlay.aoe4world.com/profile/{id}/bar?hideAfter=0&theme=top";
 const UPDATE_API: &str =
     "https://gitee.com/api/v5/repos/Passion4ever/aoe4-overlay/releases/latest";
 const RELEASES_PAGE: &str = "https://gitee.com/Passion4ever/aoe4-overlay/releases";
-const OVERLAY_H: f64 = 150.0;
-
-const MAPS_JSON: &str = include_str!("../maps.json");
-const CIVS_JSON: &str = include_str!("../civs.json");
-const OVERLAY_INIT_TMPL: &str = include_str!("overlay_inject.js");
 
 // ── 配置 ──
 #[derive(Serialize, Deserialize, Clone)]
@@ -33,14 +27,17 @@ struct Config {
     opacity: u32,
     #[serde(default = "def_zoom")]
     zoom: u32,
-    #[serde(default)]
+    #[serde(default = "def_hotkey")]
     hotkey: String,
 }
 fn def_pos() -> String {
     "top-center".into()
 }
+fn def_hotkey() -> String {
+    "Ctrl+`".into()
+}
 fn def_op() -> u32 {
-    75
+    60
 }
 fn def_zoom() -> u32 {
     75
@@ -52,7 +49,7 @@ impl Default for Config {
             position: def_pos(),
             opacity: def_op(),
             zoom: def_zoom(),
-            hotkey: String::new(),
+            hotkey: def_hotkey(),
         }
     }
 }
@@ -94,7 +91,7 @@ fn save_config(app: &AppHandle, cfg: &Config) {
     }
 }
 
-// ── overlay 窗口 ──
+// ── overlay 窗口（加载本地复刻横幅）──
 fn create_overlay(app: &AppHandle, cfg: &Config) {
     if let Some(w) = app.get_webview_window("overlay") {
         w.close().ok();
@@ -102,43 +99,31 @@ fn create_overlay(app: &AppHandle, cfg: &Config) {
     if cfg.profile_id.is_empty() {
         return;
     }
-    let url = OVERLAY_URL_TMPL.replace("{id}", &cfg.profile_id);
     let align = match cfg.position.as_str() {
-        "top-left" => "flex-start",
-        "top-right" => "flex-end",
+        "top-left" => "left",
+        "top-right" => "right",
         _ => "center",
     };
-    let init = OVERLAY_INIT_TMPL
-        .replace("__OPACITY__", &format!("{}", cfg.opacity as f64 / 100.0))
-        .replace("__ZOOM__", &format!("{}", cfg.zoom as f64 / 100.0))
-        .replace("__ALIGN__", align)
-        .replace("__PROFILE__", &cfg.profile_id)
-        .replace("__MAPCN__", MAPS_JSON.trim())
-        .replace("__CIVCN__", CIVS_JSON.trim());
+    // 配置注入给前端（窗口创建即生效；改设置时窗口会重建）
+    let init = format!(
+        "window.__PROFILE__={:?};window.__OPACITY__={};window.__ZOOM__={};window.__ALIGN__={:?};",
+        cfg.profile_id,
+        cfg.opacity as f64 / 100.0,
+        cfg.zoom as f64 / 100.0,
+        align
+    );
 
-    // 屏幕逻辑宽度（满宽横幅）
-    let width = app
-        .primary_monitor()
-        .ok()
-        .flatten()
-        .map(|m| m.size().width as f64 / m.scale_factor())
-        .unwrap_or(1920.0);
-
-    if let Ok(win) = WebviewWindowBuilder::new(
-        app,
-        "overlay",
-        WebviewUrl::External(url.parse().unwrap()),
-    )
-    .title("AoE4 Overlay")
-    .inner_size(width, OVERLAY_H)
-    .position(0.0, 0.0)
-    .transparent(true)
-    .decorations(false)
-    .always_on_top(true)
-    .skip_taskbar(true)
-    .focused(false)
-    .initialization_script(&init)
-    .build()
+    if let Ok(win) = WebviewWindowBuilder::new(app, "overlay", WebviewUrl::App("index.html".into()))
+        .title("AoE4 Overlay")
+        .inner_size(600.0, 140.0) // 初始占位；前端量好内容后 fit_overlay 贴合
+        .position(0.0, 0.0)
+        .transparent(true)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .focused(false)
+        .initialization_script(&init)
+        .build()
     {
         win.set_ignore_cursor_events(true).ok();
     }
@@ -147,14 +132,18 @@ fn create_overlay(app: &AppHandle, cfg: &Config) {
 // ── 设置窗口 ──
 fn open_settings(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("settings") {
+        w.unminimize().ok(); // 最小化的窗口要先恢复，否则 show/focus 唤不起（托盘点击 bug）
         w.show().ok();
         w.set_focus().ok();
         return;
     }
     WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("setup.html".into()))
         .title("AoE4 Overlay 设置")
-        .inner_size(400.0, 522.0)
+        .inner_size(500.0, 680.0) // 初始接近最终；前端 fit_settings 再精确贴合
         .resizable(false)
+        .maximizable(false) // 固定表单，不需要最大化
+        .center()
+        .visible(false) // 先隐藏，内容就绪后由 fit_settings 显示，避免白屏闪烁
         .build()
         .ok();
 }
@@ -328,8 +317,29 @@ fn get_app_info(app: AppHandle) -> AppInfo {
 #[tauri::command]
 fn launch_overlay(app: AppHandle, config: Config) {
     save_config(&app, &config);
-    create_overlay(&app, &config);
     register_hotkey(&app, &config.hotkey);
+    let align = match config.position.as_str() {
+        "top-left" => "left",
+        "top-right" => "right",
+        _ => "center",
+    };
+    if let Some(w) = app.get_webview_window("overlay") {
+        // 横幅已存在：推送新配置让前端实时更新，窗口不销毁、横幅不消失
+        w.show().ok();
+        app.emit(
+            "config-changed",
+            serde_json::json!({
+                "profileId": config.profile_id,
+                "opacity": config.opacity as f64 / 100.0,
+                "zoom": config.zoom as f64 / 100.0,
+                "align": align,
+            }),
+        )
+        .ok();
+    } else {
+        // 首次（之前没 profile）：创建横幅窗口
+        create_overlay(&app, &config);
+    }
     if let Some(w) = app.get_webview_window("settings") {
         w.close().ok();
     }
@@ -340,18 +350,69 @@ fn open_external(app: AppHandle, url: String) {
     app.opener().open_url(url, None::<&str>).ok();
 }
 
-// 注入脚本量好横幅真实高度后调用，让窗口贴合（避免 WebView2 大块透明区露玻璃，
-// 同时自动适配 1v1~4v4 不同高度）。宽度保持满屏不变。
+// 设置窗口自适应到内容真实尺寸（同 fit_overlay 的 DPI 自校正），保证任意缩放比下
+// CSS 视口正好 = Electron 原版设计尺寸(宽 400)，底部按钮/页脚不被裁。居中显示。
 #[tauri::command]
-fn fit_overlay(app: AppHandle, height: f64) {
-    if let Some(w) = app.get_webview_window("overlay") {
-        let h = height.clamp(60.0, 420.0);
+fn fit_settings(app: AppHandle, width: f64, height: f64, vw: f64, vh: f64) {
+    if vw < 1.0 || vh < 1.0 {
+        return;
+    }
+    if let Some(w) = app.get_webview_window("settings") {
         let sf = w.scale_factor().unwrap_or(1.0);
-        let logical_w = w
+        let (cur_w, cur_h) = w
             .inner_size()
-            .map(|s| s.width as f64 / sf)
+            .map(|s| (s.width as f64 / sf, s.height as f64 / sf))
+            .unwrap_or((400.0, 560.0));
+        let new_w = (cur_w * width / vw).clamp(200.0, 1400.0);
+        let new_h = (cur_h * height / vh).clamp(200.0, 1800.0);
+        w.set_size(LogicalSize::new(new_w, new_h)).ok();
+        w.center().ok();
+        // 内容已就绪+贴合，此刻才显示（窗口创建时是隐藏的）→ 不白屏闪烁
+        if !w.is_visible().unwrap_or(true) {
+            w.show().ok();
+            w.set_focus().ok();
+        }
+    }
+}
+
+// 前端量好横幅 CSS 尺寸(width/height) + 当前视口 CSS 尺寸(vw/vh)后调用。
+// 本机 WebView2 的 devicePixelRatio ≠ Tauri 窗口缩放因子，所以不能直接把 CSS 尺寸当窗口逻辑尺寸；
+// 用「当前窗口逻辑尺寸 × 横幅CSS ÷ 当前视口CSS」自校正，一步把视口逼到正好等于横幅。
+// 定位用 Tauri 逻辑像素(屏宽与窗宽同一坐标系)，左/中/右贴顶。
+#[tauri::command]
+fn fit_overlay(app: AppHandle, width: f64, height: f64, align: String, vw: f64, vh: f64, dpr: f64) {
+    if vw < 1.0 || vh < 1.0 || dpr < 0.1 {
+        return;
+    }
+    let _ = dpr;
+    if let Some(w) = app.get_webview_window("overlay") {
+        let sf = w.scale_factor().unwrap_or(1.0);
+        let isz = w.inner_size().ok();
+        let cur_phys_w = isz.map(|s| s.width as f64).unwrap_or(900.0); // 当前实际物理宽
+        let cur_phys_h = isz.map(|s| s.height as f64).unwrap_or(210.0);
+        let new_w = (cur_phys_w / sf * width / vw).clamp(150.0, 4000.0);
+        let new_h = (cur_phys_h / sf * height / vh).clamp(40.0, 1200.0);
+        w.set_size(LogicalSize::new(new_w, new_h)).ok();
+        // outer_size 含 Windows 不可见边框；可见横幅(客户区)比外框窄 border。
+        // 反向补偿 border，让"可见横幅"真正贴边（左右对称）。居中不受影响(边框对称)。
+        let outer_w = w
+            .outer_size()
+            .map(|s| s.width as f64)
+            .unwrap_or(cur_phys_w);
+        let border = ((outer_w - cur_phys_w) / 2.0).max(0.0); // 单侧不可见边框
+        let screen_phys = app
+            .primary_monitor()
+            .ok()
+            .flatten()
+            .map(|m| m.size().width as f64)
             .unwrap_or(1920.0);
-        w.set_size(LogicalSize::new(logical_w, h)).ok();
+        let m = 2.0; // 期望可见边距(物理px)，贴边
+        let x = match align.as_str() {
+            "left" => m - border,
+            "right" => screen_phys - outer_w + border - m,
+            _ => (screen_phys - outer_w) / 2.0,
+        };
+        w.set_position(PhysicalPosition::new(x, 0.0)).ok();
     }
 }
 
@@ -369,7 +430,8 @@ pub fn run() {
             get_app_info,
             launch_overlay,
             open_external,
-            fit_overlay
+            fit_overlay,
+            fit_settings
         ])
         .setup(|app| {
             let handle = app.handle().clone();

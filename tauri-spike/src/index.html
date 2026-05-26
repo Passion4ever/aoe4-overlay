@@ -1,39 +1,225 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="stylesheet" href="styles.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri App</title>
-    <script type="module" src="/main.js" defer></script>
-  </head>
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<script src="data.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  html,body{height:100%;background:transparent;overflow:hidden;}
+  body{
+    font-family:'Segoe UI',system-ui,sans-serif; color:#fff;
+    -webkit-user-select:none; user-select:none;
+    text-shadow:0 1px 2px rgba(0,0,0,.8);
+  }
+  /* 横幅本体：半透明深色 tinted-glass，圆角；宽度由内容决定，贴左上由 Rust 定位 */
+  #bar{
+    display:none;
+    position:absolute; top:0; left:0;
+    width:max-content; max-width:none;
+    background:linear-gradient(90deg, rgba(8,8,10,.92), rgba(8,8,10,.72) 50%, rgba(8,8,10,.92));
+    border-radius:8px; padding:8px 12px;
+    align-items:center;
+  }
+  #bar.show{display:flex;}
 
-  <body>
-    <main class="container">
-      <h1>Welcome to Tauri</h1>
+  .side{display:flex; flex-direction:column; gap:7px;}
+  .center{flex:none; padding:0 10px; text-align:center; white-space:nowrap;
+          display:flex; flex-direction:column; justify-content:center; align-items:center;}
+  .center .map{font-size:14px; font-weight:700;}
+  .center .mode{font-size:12px; text-transform:uppercase; color:rgba(255,255,255,.6); margin-top:2px;}
 
-      <div class="row">
-        <a href="https://tauri.app" target="_blank">
-          <img src="/assets/tauri.svg" class="logo tauri" alt="Tauri logo" />
-        </a>
-        <a
-          href="https://developer.mozilla.org/en-US/docs/Web/JavaScript"
-          target="_blank"
-        >
-          <img
-            src="/assets/javascript.svg"
-            class="logo vanilla"
-            alt="JavaScript logo"
-          />
-        </a>
+  /* 一名玩家 = 一行：左侧整行高的旗帜+段位图标，右侧两行文字 */
+  .player{display:flex; align-items:center; gap:8px;}
+  .player.right{flex-direction:row-reverse;}
+
+  .flag{ width:52px; height:32px; object-fit:cover; border-radius:4px; outline:1px solid #888; flex:none; }
+  .badge-cell{ width:32px; height:32px; display:flex; align-items:center; justify-content:center; flex:none; }
+  .badge{ width:32px; height:32px; object-fit:contain; }
+
+  .pinfo{ display:flex; flex-direction:column; justify-content:center; gap:2px; }
+  .player.right .pinfo{ align-items:flex-end; }
+
+  /* 名字行：国旗 + 名字 */
+  .nameline{ display:flex; align-items:center; gap:6px; width:214px; }
+  .player.right .nameline{ flex-direction:row-reverse; }
+  .cflag{ width:18px; height:13px; object-fit:cover; border-radius:2px;
+          outline:1px solid rgba(255,255,255,.35); flex:none; }
+  .c-name{ flex:1 1 auto; min-width:0; font-size:13px; font-weight:700;
+           white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .c-name.win{color:#46d369;} .c-name.loss{color:#f0625b;}
+  .player.right .c-name{ text-align:right; }
+
+  /* 第二行顺序：排名 · 分数 · 胜负 · 常用文明，全部定宽上下对齐 */
+  .c-meta{ display:flex; gap:6px; font-size:12px; }
+  .player.right .c-meta{ flex-direction:row-reverse; }
+  .c-meta span{ flex:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .m-rank,.m-rating,.m-record{ text-align:right; }
+  .m-civs{ text-align:left; }
+  .player.right .m-rank,.player.right .m-rating,.player.right .m-record{ text-align:left; }
+  .player.right .m-civs{ text-align:right; }
+  .m-rank  { width:48px; color:rgba(255,255,255,.7); }
+  .m-rating{ width:30px; font-weight:600; }
+  .m-record{ width:50px; }
+  .m-civs  { width:78px; color:rgba(255,255,255,.62); }
+  .m-record .w{color:#46d369;} .m-record .l{color:#f0625b;}
+</style>
+</head>
+<body>
+  <div id="bar">
+    <div class="side" id="left"></div>
+    <div class="center"><div class="map" id="map"></div><div class="mode" id="mode"></div></div>
+    <div class="side" id="right"></div>
+  </div>
+
+<script>
+  const API = (p) => `https://aoe4world.com/api/v0/players/${p}`;
+  const CIVS = window.CIVS || {}, MAP_CN = window.MAP_CN || {};
+  let lastSig = '';
+  let civCache = {}; // profile_id -> "甲·乙"（每局重置）
+
+  // 配置由 Rust 在窗口创建时注入（create_overlay 的 initialization_script）
+  let cfg = {
+    profileId: window.__PROFILE__ || '16507159',
+    align:     window.__ALIGN__ || 'center',
+    zoom:      (typeof window.__ZOOM__ === 'number') ? window.__ZOOM__ : 1.0,
+    opacity:   (typeof window.__OPACITY__ === 'number') ? window.__OPACITY__ : 0.92,
+  };
+  let PROFILE = cfg.profileId;
+  const invoke = (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) || null;
+
+  function applyCfg(){
+    const bar = document.getElementById('bar');
+    bar.style.zoom = cfg.zoom;                              // 整体缩放
+    const a = cfg.opacity, a2 = (a*0.8).toFixed(3);         // 背景不透明度
+    bar.style.background = `linear-gradient(90deg, rgba(8,8,10,${a}), rgba(8,8,10,${a2}) 50%, rgba(8,8,10,${a}))`;
+  }
+
+  function civInfo(slug){ return CIVS[slug] || { color:'#888', flag:'unknown', cn:slug }; }
+
+  function mapName(en){
+    const cn = MAP_CN[en] || MAP_CN[(en||'').replace(/^[A-Za-z]+(:[A-Za-z]+)? - /,'').replace(/\s*\(old\)\s*$/i,'')];
+    return cn || en || ''; // 默认中文，未翻译则英文
+  }
+
+  function esc(s){ return String(s||'').replace(/[&<>]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+
+  function playerHTML(p, leaderboard, align){
+    const c = civInfo(p.civilization);
+    const mode = p.modes ? p.modes[leaderboard] : null;
+    const stats = mode && mode.games_count ? mode : null;
+    const rankLevel = (mode && mode.rank_level) || 'unranked';
+    const badgeKey = leaderboard.startsWith('rm_solo') ? 'solo_'+rankLevel
+                   : leaderboard.startsWith('rm_team') ? 'team_'+rankLevel : null;
+    const resultCls = p.result === 'win' ? 'win' : p.result === 'loss' ? 'loss' : '';
+    let ratingHTML='', rankHTML='', recordHTML='';
+    if (stats){
+      ratingHTML = stats.rating || '';
+      rankHTML   = stats.rank ? '#'+stats.rank : '';
+      recordHTML = `<span class="w">${stats.wins_count}W</span> <span class="l">${stats.losses_count}L</span>`;
+    } else {
+      ratingHTML = `<span style="color:rgba(255,255,255,.45)">${rankLevel.endsWith('unranked')?'未定级':'-'}</span>`;
+    }
+    const badge = badgeKey ? `<img class="badge" src="assets/badges/${badgeKey}.svg" onerror="this.style.display='none'">` : '';
+    const cflag = p.country ? `<img class="cflag" src="assets/country/${String(p.country).toLowerCase()}.svg" onerror="this.style.display='none'">` : '';
+    return `<div class="player ${align}">
+      <img class="flag" src="assets/flags/${c.flag}.png" style="outline-color:${c.color}" onerror="this.src='assets/flags/unknown.png'">
+      <span class="badge-cell">${badge}</span>
+      <div class="pinfo">
+        <div class="nameline">${cflag}<span class="c-name ${resultCls}" title="${esc(p.name)}">${esc(p.name)}</span></div>
+        <div class="c-meta">
+          <span class="m-rank">${rankHTML}</span>
+          <span class="m-rating">${ratingHTML}</span>
+          <span class="m-record">${recordHTML}</span>
+          <span class="m-civs" id="civs-${p.profile_id}">${civCache[p.profile_id]||''}</span>
+        </div>
       </div>
-      <p>Click on the Tauri logo to learn more about the framework</p>
+    </div>`;
+  }
 
-      <form class="row" id="greet-form">
-        <input id="greet-input" placeholder="Enter a name..." />
-        <button type="submit">Greet</button>
-      </form>
-      <p id="greet-msg"></p>
-    </main>
-  </body>
+  function sides(game){
+    const myIds = (game.filters?.profile_ids)||[];
+    if (game.teams.length > 2){
+      const myTeam = game.teams.find(t=>t.some(p=>myIds.includes(p.profile_id))) || game.teams[0];
+      const others = game.teams.filter(t=>t!==myTeam);
+      const half = Math.ceil(others.length/2);
+      return { left:[...myTeam, ...others.slice(0,half).flat()], right: others.slice(half).flat() };
+    }
+    const myTeam = game.teams.find(t=>t.some(p=>myIds.includes(p.profile_id))) || game.teams[0];
+    const opp = game.teams.find(t=>t!==myTeam) || [];
+    return { left: myTeam, right: opp };
+  }
+
+  // 拉某玩家本赛季最常用的两个文明，"甲·乙"
+  async function topCivs(pid, lb){
+    try{
+      const r = await fetch(API(pid)); if(!r.ok) return '';
+      const d = await r.json();
+      const arr = ((d.modes||{})[lb]||{}).civilizations || [];
+      const top = arr.slice().sort((a,b)=>b.games_count-a.games_count).slice(0,2);
+      return top.map(c=>civInfo(c.civilization).cn).join('·');
+    }catch(e){ return ''; }
+  }
+
+  function fit(){
+    const bar = document.getElementById('bar');
+    const r = bar.getBoundingClientRect();
+    const width = Math.ceil(r.width), height = Math.ceil(r.height);
+    // 同时传当前视口 CSS 尺寸：Rust 端按 视口/窗口 比例自校正（本机 WebView2 的 DPI 比例 ≠ 窗口缩放）
+    if (invoke && width > 50)
+      invoke('fit_overlay', { width, height, align: cfg.align,
+        vw: window.innerWidth, vh: window.innerHeight, dpr: window.devicePixelRatio || 1 });
+  }
+
+  async function render(){
+    try{
+      const resp = await fetch(API(PROFILE)+'/games/last');
+      if(!resp.ok) return;
+      const game = await resp.json();
+      if(!game || !game.teams) return;
+      const sig = game.game_id+'|'+game.updated_at;
+      if(sig === lastSig) return; lastSig = sig; civCache = {};
+
+      const lb = game.leaderboard || 'rm_solo';
+      const s = sides(game);
+      document.getElementById('left').innerHTML  = s.left.map(p=>playerHTML(p, lb, 'left')).join('');
+      document.getElementById('right').innerHTML = s.right.map(p=>playerHTML(p, lb, 'right')).join('');
+      document.getElementById('map').textContent  = mapName(game.map);
+      document.getElementById('mode').textContent = (game.kind||'').replace(/_/g,' ');
+      document.getElementById('bar').classList.add('show');
+      requestAnimationFrame(fit);
+
+      // 异步补常用文明（每位玩家一次请求，填好后再贴合一次）
+      const all = [...s.left, ...s.right];
+      await Promise.all(all.map(async p=>{
+        const t = await topCivs(p.profile_id, lb);
+        civCache[p.profile_id] = t;
+        const el = document.getElementById('civs-'+p.profile_id);
+        if (el) el.textContent = t;
+      }));
+      requestAnimationFrame(fit);
+      setTimeout(fit, 250);
+      setTimeout(fit, 800);
+    }catch(e){}
+  }
+
+  applyCfg();
+  render();
+  setInterval(render, 15000);
+
+  // 设置窗口"应用"后，Rust 推送新配置 → 实时更新（横幅不销毁、不消失）
+  if (window.__TAURI__ && window.__TAURI__.event){
+    window.__TAURI__.event.listen('config-changed', (e)=>{
+      const c = e.payload || {};
+      const profileChanged = !!c.profileId && c.profileId !== cfg.profileId;
+      if (c.profileId) { cfg.profileId = c.profileId; PROFILE = c.profileId; }
+      if (typeof c.opacity === 'number') cfg.opacity = c.opacity;
+      if (typeof c.zoom === 'number') cfg.zoom = c.zoom;
+      if (c.align) cfg.align = c.align;
+      applyCfg(); // 缩放/透明度即时生效（纯 CSS）
+      if (profileChanged) { lastSig = ''; render(); } // 仅换玩家才重新拉数据(含常用文明)
+      else { requestAnimationFrame(fit); setTimeout(fit, 150); setTimeout(fit, 400); } // 多调几次让尺寸+定位收敛
+    });
+  }
+</script>
+</body>
 </html>
