@@ -1,8 +1,8 @@
 [package]
-name = "tauri-spike"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+name = "aoe4-overlay"
+version = "1.2.0"
+description = "AoE4 对局信息悬浮横幅"
+authors = ["Gold~"]
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,15 +11,18 @@ edition = "2021"
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
-name = "tauri_spike_lib"
+name = "aoe4_overlay_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+ureq = "2"
 
