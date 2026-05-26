@@ -339,11 +339,25 @@ function checkForUpdate() {
       res.on("data", (c) => (data += c));
       res.on("end", () => {
         try {
-          const tag = JSON.parse(data).tag_name;
+          const json = JSON.parse(data);
+          const tag = json.tag_name;
           if (!tag || !isNewer(tag, app.getVersion())) return;
+          // Download link priority: an explicit URL in the release notes (e.g.
+          // a 蓝奏云 link) → the attached .exe asset (CI uploads it to Gitee) →
+          // the Gitee release page as a last resort.
+          const bodyUrl = (json.body || "").match(/https?:\/\/[^\s)]+/);
+          const exeAsset = (json.assets || []).find((a) =>
+            String(a.browser_download_url || a.name || "")
+              .toLowerCase()
+              .endsWith(".exe")
+          );
           updateInfo = {
             version: String(tag).replace(/^v/i, ""),
-            url: RELEASES_PAGE,
+            url: bodyUrl
+              ? bodyUrl[0]
+              : exeAsset
+              ? exeAsset.browser_download_url
+              : RELEASES_PAGE,
           };
           updateTrayMenu();
           // If a settings window is already open, surface the banner now.

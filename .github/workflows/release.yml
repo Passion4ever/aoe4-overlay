@@ -1,0 +1,29 @@
+name: Release
+
+# 推送 v* 标签时触发：在云端编译 exe 并发布到 Gitee Release。
+# 你的上行只传几 KB 的 tag，67MB 由 GitHub 服务器直接传给 Gitee。
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        run: npm install
+
+      - name: Build portable exe
+        run: npm run build
+
+      - name: Publish to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: node scripts/release.mjs
