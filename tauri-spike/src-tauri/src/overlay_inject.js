@@ -17,6 +17,21 @@ window.addEventListener('DOMContentLoaded', function () {
     '[class*="w-[800px]"]{width:1000px !important;}';
   d.head.appendChild(fixStyle);
 
+  // 自动贴合横幅高度：量横幅卡片底部，告诉 Rust 调整窗口高度（避免大块透明区
+  // 在 WebView2 下露玻璃，同时自适应 1v1~4v4）。节流，仅高度变化时调用。
+  var _invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+  var _lastH = 0;
+  function fitOverlay() {
+    if (!_invoke) return;
+    var card = d.querySelector('[class*="w-[800px]"]');
+    if (!card) return;
+    var h = Math.ceil(card.getBoundingClientRect().bottom) + 16;
+    if (h > 40 && Math.abs(h - _lastH) > 2) {
+      _lastH = h;
+      _invoke('fit_overlay', { height: h });
+    }
+  }
+
   // 地图中文：英文名 / 中文（锦标赛前缀剥掉再查表，英文保留）
   var MAP_CN = __MAPCN__;
   var observer = new MutationObserver(function () {
@@ -30,8 +45,11 @@ window.addEventListener('DOMContentLoaded', function () {
         if (text !== expected) el.textContent = expected;
       }
     });
+    fitOverlay();
   });
   observer.observe(d.body, { childList: true, subtree: true, characterData: true });
+  setTimeout(fitOverlay, 800);
+  setInterval(fitOverlay, 1500);
 
   // 对手常用文明：名字后追加中文文明
   var CIV_CN = __CIVCN__;

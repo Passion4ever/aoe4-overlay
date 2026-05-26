@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use tauri::{
     menu::{MenuBuilder, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, Wry, WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, LogicalSize, Manager, Wry, WebviewUrl, WebviewWindowBuilder,
 };
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_opener::OpenerExt;
@@ -16,7 +16,7 @@ const OVERLAY_URL_TMPL: &str =
 const UPDATE_API: &str =
     "https://gitee.com/api/v5/repos/Passion4ever/aoe4-overlay/releases/latest";
 const RELEASES_PAGE: &str = "https://gitee.com/Passion4ever/aoe4-overlay/releases";
-const OVERLAY_H: f64 = 500.0;
+const OVERLAY_H: f64 = 150.0;
 
 const MAPS_JSON: &str = include_str!("../maps.json");
 const CIVS_JSON: &str = include_str!("../civs.json");
@@ -340,6 +340,21 @@ fn open_external(app: AppHandle, url: String) {
     app.opener().open_url(url, None::<&str>).ok();
 }
 
+// 注入脚本量好横幅真实高度后调用，让窗口贴合（避免 WebView2 大块透明区露玻璃，
+// 同时自动适配 1v1~4v4 不同高度）。宽度保持满屏不变。
+#[tauri::command]
+fn fit_overlay(app: AppHandle, height: f64) {
+    if let Some(w) = app.get_webview_window("overlay") {
+        let h = height.clamp(60.0, 420.0);
+        let sf = w.scale_factor().unwrap_or(1.0);
+        let logical_w = w
+            .inner_size()
+            .map(|s| s.width as f64 / sf)
+            .unwrap_or(1920.0);
+        w.set_size(LogicalSize::new(logical_w, h)).ok();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -353,7 +368,8 @@ pub fn run() {
             get_config,
             get_app_info,
             launch_overlay,
-            open_external
+            open_external,
+            fit_overlay
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -368,6 +384,14 @@ pub fn run() {
             check_update(handle);
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            // 关闭所有窗口不退出（常驻托盘）；只有托盘“退出”(app.exit) 才真退。
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+                if code.is_none() {
+                    api.prevent_exit();
+                }
+            }
+        });
 }

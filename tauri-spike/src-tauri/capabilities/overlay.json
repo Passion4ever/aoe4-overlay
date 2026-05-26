@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "overlay",
+  "description": "overlay 窗口仅需调用自定义 fit_overlay 命令",
+  "windows": ["overlay"],
+  "permissions": ["core:default"]
+}
