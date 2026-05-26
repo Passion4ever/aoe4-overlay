@@ -1,36 +1,12 @@
 {
-  "name": "AoE4-Overlay",
-  "version": "1.2.0",
-  "description": "AoE4 transparent overlay",
-  "author": "Gold~",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "https://gitee.com/Passion4ever/aoe4-overlay.git"
-  },
-  "main": "src/main.js",
+  "name": "tauri-spike",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
   "scripts": {
-    "start": "electron .",
-    "build": "electron-builder --win portable",
-    "release": "node scripts/release.mjs"
-  },
-  "build": {
-    "appId": "com.aoe4.overlay",
-    "productName": "AoE4-Overlay",
-    "files": [
-      "**/*",
-      "!**/*.png"
-    ],
-    "win": {
-      "target": "portable",
-      "icon": "assets/icon.ico"
-    },
-    "portable": {
-      "artifactName": "AoE4Overlay-${version}.exe"
-    }
+    "tauri": "tauri"
   },
   "devDependencies": {
-    "electron": "^30.0.0",
-    "electron-builder": "^24.0.0"
+    "@tauri-apps/cli": "^2"
   }
 }

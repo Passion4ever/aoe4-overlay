@@ -1,9 +1,11 @@
 # 依赖与编译产物
 node_modules/
 dist/
+/src-tauri/target/
 
-# 日志
+# 临时
 *.log
+icon_src.png
 
 # 系统/编辑器
 .DS_Store
