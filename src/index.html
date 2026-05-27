@@ -75,14 +75,16 @@
   const API = (p) => `https://aoe4world.com/api/v0/players/${p}`;
   const CIVS = window.CIVS || {}, MAP_CN = window.MAP_CN || {};
   let lastSig = '';
+  let lastGame = null; // 最近一局数据，供换徽章风格等纯视觉变更用缓存重绘
   let civCache = {}; // profile_id -> "甲·乙"（每局重置）
 
   // 配置由 Rust 在窗口创建时注入（create_overlay 的 initialization_script）
   let cfg = {
-    profileId: window.__PROFILE__ || '16507159',
+    profileId: window.__PROFILE__ || '', // 由 Tauri 注入；直接开网页(无注入)时为空，render 会跳过
     align:     window.__ALIGN__ || 'center',
     zoom:      (typeof window.__ZOOM__ === 'number') ? window.__ZOOM__ : 1.0,
     opacity:   (typeof window.__OPACITY__ === 'number') ? window.__OPACITY__ : 0.92,
+    badge:     window.__BADGE__ || 'default', // default=简约svg / ingame=游戏原版png
   };
   let PROFILE = cfg.profileId;
   const invoke = (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) || null;
@@ -119,7 +121,10 @@
     } else {
       ratingHTML = `<span style="color:rgba(255,255,255,.45)">${rankLevel.endsWith('unranked')?'未定级':'-'}</span>`;
     }
-    const badge = badgeKey ? `<img class="badge" src="assets/badges/${badgeKey}.svg" onerror="this.style.display='none'">` : '';
+    const badgeSrc = !badgeKey ? '' : (cfg.badge === 'ingame'
+      ? `assets/badges/ingame/${badgeKey}.png`     // 游戏原版
+      : `assets/badges/default/${badgeKey}.svg`);  // 默认简约
+    const badge = badgeSrc ? `<img class="badge" src="${badgeSrc}" onerror="this.style.display='none'">` : '';
     const cflag = p.country ? `<img class="cflag" src="assets/country/${String(p.country).toLowerCase()}.svg" onerror="this.style.display='none'">` : '';
     return `<div class="player ${align}">
       <img class="flag" src="assets/flags/${c.flag}.png" style="outline-color:${c.color}" onerror="this.src='assets/flags/unknown.png'">
@@ -170,23 +175,32 @@
         vw: window.innerWidth, vh: window.innerHeight, dpr: window.devicePixelRatio || 1 });
   }
 
+  // 用缓存的 lastGame 重绘 DOM（不联网）。换徽章风格/对齐等纯视觉变更走这里。
+  function paint(){
+    if(!lastGame) return;
+    const game = lastGame, lb = game.leaderboard || 'rm_solo';
+    const s = sides(game);
+    document.getElementById('left').innerHTML  = s.left.map(p=>playerHTML(p, lb, 'left')).join('');
+    document.getElementById('right').innerHTML = s.right.map(p=>playerHTML(p, lb, 'right')).join('');
+    document.getElementById('map').textContent  = mapName(game.map);
+    document.getElementById('mode').textContent = (game.kind||'').replace(/_/g,' ');
+    document.getElementById('bar').classList.add('show');
+    requestAnimationFrame(fit);
+  }
+
   async function render(){
+    if(!PROFILE) return; // 没有 profile id（如直接开网页预览）就不请求
     try{
       const resp = await fetch(API(PROFILE)+'/games/last');
       if(!resp.ok) return;
       const game = await resp.json();
       if(!game || !game.teams) return;
       const sig = game.game_id+'|'+game.updated_at;
-      if(sig === lastSig) return; lastSig = sig; civCache = {};
+      if(sig === lastSig) return; lastSig = sig; civCache = {}; lastGame = game;
 
       const lb = game.leaderboard || 'rm_solo';
       const s = sides(game);
-      document.getElementById('left').innerHTML  = s.left.map(p=>playerHTML(p, lb, 'left')).join('');
-      document.getElementById('right').innerHTML = s.right.map(p=>playerHTML(p, lb, 'right')).join('');
-      document.getElementById('map').textContent  = mapName(game.map);
-      document.getElementById('mode').textContent = (game.kind||'').replace(/_/g,' ');
-      document.getElementById('bar').classList.add('show');
-      requestAnimationFrame(fit);
+      paint();
 
       // 异步补常用文明（每位玩家一次请求，填好后再贴合一次）
       const all = [...s.left, ...s.right];
@@ -211,13 +225,18 @@
     window.__TAURI__.event.listen('config-changed', (e)=>{
       const c = e.payload || {};
       const profileChanged = !!c.profileId && c.profileId !== cfg.profileId;
+      const badgeChanged   = !!c.badge && c.badge !== cfg.badge;
       if (c.profileId) { cfg.profileId = c.profileId; PROFILE = c.profileId; }
       if (typeof c.opacity === 'number') cfg.opacity = c.opacity;
       if (typeof c.zoom === 'number') cfg.zoom = c.zoom;
       if (c.align) cfg.align = c.align;
+      if (c.badge) cfg.badge = c.badge;
       applyCfg(); // 缩放/透明度即时生效（纯 CSS）
       if (profileChanged) { lastSig = ''; render(); } // 仅换玩家才重新拉数据(含常用文明)
-      else { requestAnimationFrame(fit); setTimeout(fit, 150); setTimeout(fit, 400); } // 多调几次让尺寸+定位收敛
+      else {
+        if (badgeChanged) paint(); // 换徽章风格：用缓存数据重绘(常用文明从 civCache 即时回填，不联网)
+        requestAnimationFrame(fit); setTimeout(fit, 150); setTimeout(fit, 400); // 多调几次让尺寸+定位收敛
+      }
     });
   }
 </script>

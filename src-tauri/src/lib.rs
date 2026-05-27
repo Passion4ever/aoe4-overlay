@@ -29,12 +29,17 @@ struct Config {
     zoom: u32,
     #[serde(default = "def_hotkey")]
     hotkey: String,
+    #[serde(default = "def_badge")]
+    badge_style: String,
 }
 fn def_pos() -> String {
     "top-center".into()
 }
 fn def_hotkey() -> String {
     "Ctrl+`".into()
+}
+fn def_badge() -> String {
+    "default".into() // default = 简约 svg；ingame = 游戏原版 png
 }
 fn def_op() -> u32 {
     60
@@ -50,6 +55,7 @@ impl Default for Config {
             opacity: def_op(),
             zoom: def_zoom(),
             hotkey: def_hotkey(),
+            badge_style: def_badge(),
         }
     }
 }
@@ -106,11 +112,12 @@ fn create_overlay(app: &AppHandle, cfg: &Config) {
     };
     // 配置注入给前端（窗口创建即生效；改设置时窗口会重建）
     let init = format!(
-        "window.__PROFILE__={:?};window.__OPACITY__={};window.__ZOOM__={};window.__ALIGN__={:?};",
+        "window.__PROFILE__={:?};window.__OPACITY__={};window.__ZOOM__={};window.__ALIGN__={:?};window.__BADGE__={:?};",
         cfg.profile_id,
         cfg.opacity as f64 / 100.0,
         cfg.zoom as f64 / 100.0,
-        align
+        align,
+        cfg.badge_style
     );
 
     if let Ok(win) = WebviewWindowBuilder::new(app, "overlay", WebviewUrl::App("index.html".into()))
@@ -333,6 +340,7 @@ fn launch_overlay(app: AppHandle, config: Config) {
                 "opacity": config.opacity as f64 / 100.0,
                 "zoom": config.zoom as f64 / 100.0,
                 "align": align,
+                "badge": config.badge_style,
             }),
         )
         .ok();

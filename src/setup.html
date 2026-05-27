@@ -137,6 +137,14 @@
   </div>
 
   <div class="f">
+    <label>段位徽章</label>
+    <div class="seg">
+      <div id="b-default" class="on" onclick="badge('default')">默认</div>
+      <div id="b-ingame" onclick="badge('ingame')">游戏原版</div>
+    </div>
+  </div>
+
+  <div class="f">
     <label>不透明度</label>
     <div class="srow">
       <input type="range" id="opacity" min="40" max="100" value="60"
@@ -178,6 +186,7 @@
   const { invoke } = window.__TAURI__.core;
   const { listen } = window.__TAURI__.event;
   let _pos = 'top-center';
+  let _badge = 'default';
   let _updUrl = '';
 
   // 禁用 app 内的右键菜单（网页默认的刷新/检查等不该出现在桌面应用里）
@@ -185,9 +194,15 @@
 
   function pos(p){
     _pos = p;
-    document.querySelectorAll('.seg div').forEach(d=>d.classList.remove('on'));
     const map={'top-left':'p-tl','top-center':'p-tc','top-right':'p-tr'};
+    Object.values(map).forEach(id=>document.getElementById(id).classList.remove('on'));
     (document.getElementById(map[p])||document.getElementById('p-tc')).classList.add('on');
+  }
+
+  function badge(b){
+    _badge = b;
+    document.getElementById('b-default').classList.toggle('on', b==='default');
+    document.getElementById('b-ingame').classList.toggle('on', b==='ingame');
   }
 
   // 让窗口贴合内容：目标 CSS 宽=400(Electron 设计)，高=内容实际高度。
@@ -218,6 +233,7 @@
       opacity: parseInt(document.getElementById('opacity').value),
       zoom: parseInt(document.getElementById('zoom').value),
       hotkey: document.getElementById('hk').value,
+      badge_style: _badge,
     }});
   }
 
@@ -229,6 +245,7 @@
       const c = await invoke('get_config');
       if(c.profile_id) document.getElementById('pid').value = c.profile_id;
       pos(c.position || 'top-center');
+      badge(c.badge_style || 'default');
       if(c.opacity){ document.getElementById('opacity').value=c.opacity; document.getElementById('opV').textContent=c.opacity+'%'; }
       if(c.zoom){ document.getElementById('zoom').value=c.zoom; document.getElementById('zmV').textContent=c.zoom+'%'; }
       if(c.hotkey) document.getElementById('hk').value=c.hotkey;
